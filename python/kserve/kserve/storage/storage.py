@@ -317,7 +317,7 @@ class Storage(object):  # pylint: disable=too-few-public-methods
         os.environ.get("OCI_RESOURCE_PRINCIPAL_KEY_FILE"),
         signer=models.ResourcePrincipalSigner()
     )
-x
+
     # Extracting information from the URI
     match = re.match(r"oci://([\w.-]+?)/([\w.-]+)/(.+)", uri)
     if not match:
