@@ -203,3 +203,22 @@ def test_unpack_zip_file():
     Storage._unpack_archive_file(tar_file, mimetype, out_dir)
     assert os.path.exists(os.path.join(out_dir, 'model.pth'))
     os.remove(os.path.join(out_dir, 'model.pth'))
+
+
+@mock.patch(STORAGE_MODULE + '.storage')
+def test_mock_oracle_cloud(mock_storage):
+    oci_path = 'oci://tenancy_namespace/bucket_name/object_name'
+    mock_obj = mock.MagicMock()
+    mock_obj.name = 'mock.object'
+    # Mock the Oracle Cloud Object Storage client and its behavior
+    mock_storage.ObjectStorageClient().get_object.return_value = mock_obj
+
+    # Call the download method with Oracle Cloud URI
+    assert Storage.download(oci_path)
+
+def test_storage_oracle_cloud_exception():
+    oci_path = 'oci://tenancy_namespace/bucket_name/nonexistent_object'
+    # Mock the Oracle Cloud Object Storage client to simulate an exception
+    with mock.patch(STORAGE_MODULE + '.storage.ObjectStorageClient().get_object', side_effect=Exception):
+        with pytest.raises(Exception):
+            Storage.download(oci_path)
