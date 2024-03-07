@@ -37,6 +37,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 from google.auth import exceptions
 from google.cloud import storage
+from oci.object_storage import ObjectStorageClient, models
 
 MODEL_MOUNT_DIRS = "/mnt/models"
 
@@ -51,6 +52,7 @@ _URI_RE = "https?://(.+)/(.+)"
 _HTTP_PREFIX = "http(s)://"
 _HEADERS_SUFFIX = "-headers"
 _PVC_PREFIX = "/mnt/pvc"
+_ORACLE_PREFIX = "oci://" #oracle
 
 _HDFS_SECRET_DIRECTORY = "/var/secrets/kserve-hdfscreds"
 _HDFS_FILE_SECRETS = ["KERBEROS_KEYTAB", "TLS_CERT", "TLS_KEY", "TLS_CA"]
@@ -87,6 +89,10 @@ class Storage(object):  # pylint: disable=too-few-public-methods
             Storage._download_azure_blob(uri, out_dir)
         elif re.search(_AZURE_FILE_RE, uri):
             Storage._download_azure_file_share(uri, out_dir)
+        
+        elif uri.startswith(_ORACLE_PREFIX):  # Add Oracle Cloud Storage check
+            Storage._download_oracle_cloud(uri, out_dir)
+
         elif is_local:
             return Storage._download_local(uri, out_dir)
         elif re.search(_URI_RE, uri):
@@ -98,7 +104,7 @@ class Storage(object):  # pylint: disable=too-few-public-methods
         else:
             raise Exception("Cannot recognize storage type for " + uri +
                             "\n'%s', '%s', '%s', and '%s' are the current available storage type." %
-                            (_GCS_PREFIX, _S3_PREFIX, _LOCAL_PREFIX, _HTTP_PREFIX))
+                            (_GCS_PREFIX, _S3_PREFIX, _LOCAL_PREFIX, _HTTP_PREFIX, _ORACLE_PREFIX ))
 
         logging.info("Successfully copied %s to %s", uri, out_dir)
         return out_dir
@@ -296,6 +302,50 @@ class Storage(object):  # pylint: disable=too-few-public-methods
             mimetype, _ = mimetypes.guess_type(blob.name)
             if mimetype in ["application/x-tar", "application/zip"]:
                 Storage._unpack_archive_file(dest_path, mimetype, temp_dir)
+
+
+#Oracle Cloud 
+    @staticmethod
+    def _download_oracle_cloud(uri, temp_dir: str):
+    from oci.object_storage import ObjectStorageClient, models
+
+    object_storage_client = ObjectStorageClient(
+        os.environ.get("OCI_RESOURCE_PRINCIPAL_REGION"),
+        os.environ.get("OCI_RESOURCE_PRINCIPAL_USER"),
+        os.environ.get("OCI_RESOURCE_PRINCIPAL_FINGERPRINT"),
+        os.environ.get("OCI_RESOURCE_PRINCIPAL_TENANCY"),
+        os.environ.get("OCI_RESOURCE_PRINCIPAL_KEY_FILE"),
+        signer=models.ResourcePrincipalSigner()
+    )
+
+    # Extracting information from the URI
+    match = re.match(r"oci://([\w.-]+?)/([\w.-]+)/(.+)", uri)
+    if not match:
+        raise ValueError(f"Invalid Oracle Cloud Storage URI: {uri}")
+
+    namespace, bucket_name, object_name = match.groups()
+
+    file_count = 0
+    dest_path = os.path.join(temp_dir, object_name)
+
+    try:
+        with object_storage_client.get_object(namespace, bucket_name, object_name) as response:
+            with open(dest_path, "wb+") as f:
+                f.write(response.data.content)
+        file_count += 1
+        logging.info("Downloaded: %s", dest_path)
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch model. Error: {e}")
+
+    if file_count == 0:
+        raise RuntimeError(f"No model found in {uri}")
+
+    # Unpack compressed file if needed
+    mimetype, _ = mimetypes.guess_type(dest_path)
+    if mimetype in ["application/x-tar", "application/zip"]:
+        Storage._unpack_archive_file(dest_path, mimetype, temp_dir)
+
 
     @staticmethod
     def _load_hdfs_configuration() -> Dict:
