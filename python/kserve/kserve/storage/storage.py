@@ -307,7 +307,7 @@ class Storage(object):  # pylint: disable=too-few-public-methods
 #Oracle Cloud 
     @staticmethod
     def _download_oracle_cloud(uri, temp_dir: str):
-    from oci.object_storage import ObjectStorageClient, models
+        from oci.object_storage import ObjectStorageClient, models
 
     object_storage_client = ObjectStorageClient(
         os.environ.get("OCI_RESOURCE_PRINCIPAL_REGION"),
@@ -317,7 +317,7 @@ class Storage(object):  # pylint: disable=too-few-public-methods
         os.environ.get("OCI_RESOURCE_PRINCIPAL_KEY_FILE"),
         signer=models.ResourcePrincipalSigner()
     )
-
+x
     # Extracting information from the URI
     match = re.match(r"oci://([\w.-]+?)/([\w.-]+)/(.+)", uri)
     if not match:
