@@ -203,4 +203,3 @@ def test_unpack_zip_file():
     Storage._unpack_archive_file(tar_file, mimetype, out_dir)
     assert os.path.exists(os.path.join(out_dir, 'model.pth'))
     os.remove(os.path.join(out_dir, 'model.pth'))
-#s
