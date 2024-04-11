@@ -24,7 +24,7 @@ const (
 	OCICredentialFileName        = "oci-api-key.pem"             // #nosec G101, File name for OCI credentials
 	OCICredentialVolumeName      = "user-oci-sa"                 // #nosec G101, Volume name for OCI credentials
 	OCICredentialVolumeMountPath = "/var/secrets/oci"            // #nosec G101, Mount path for OCI credentials
-	OCICredentialEnvKey          = "OCI_APPLICATION_CREDENTIALS" // #nosec G101, Environment variable key for OCI credentials
+	OCICredentialEnvKey          = "OCI_APPLICATION_CREDENTIALS" // #nosec G101, Environment variable key for OCI credentials.
 )
 
 // OCIConfig holds configuration for accessing OCI resources
