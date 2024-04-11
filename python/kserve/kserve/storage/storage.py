@@ -52,7 +52,7 @@ _URI_RE = "https?://(.+)/(.+)"
 _HTTP_PREFIX = "http(s)://"
 _HEADERS_SUFFIX = "-headers"
 _PVC_PREFIX = "/mnt/pvc"
-_ORACLE_PREFIX = "oci://" #oracle
+_OCI_PREFIX = "oci://"
 
 _HDFS_SECRET_DIRECTORY = "/var/secrets/kserve-hdfscreds"
 _HDFS_FILE_SECRETS = ["KERBEROS_KEYTAB", "TLS_CERT", "TLS_KEY", "TLS_CA"]
@@ -70,6 +70,9 @@ class Storage(object):  # pylint: disable=too-few-public-methods
         is_local = False
         if uri.startswith(_LOCAL_PREFIX) or os.path.exists(uri):
             is_local = True
+
+        if uri.startswith(_OCI_PREFIX):
+            Storage._download_oci(uri, out_dir)
 
         if out_dir is None:
             if is_local:
@@ -304,47 +307,34 @@ class Storage(object):  # pylint: disable=too-few-public-methods
                 Storage._unpack_archive_file(dest_path, mimetype, temp_dir)
 
 
-#Oracle Cloud 
     @staticmethod
-    def _download_oracle_cloud(uri, temp_dir: str):
-    from oci.object_storage import ObjectStorageClient, models
+    def _download_oci(uri: str, temp_dir: str):
+        # Parse the OCI object storage URI
+        parsed = urlparse(uri, scheme="oci")
+        namespace = parsed.netloc  # The OCI namespace (e.g., your tenancy's namespace)
+        bucket_name, object_name = parsed.path.lstrip("/").split("/", 1)
 
-    object_storage_client = ObjectStorageClient(
-        os.environ.get("OCI_RESOURCE_PRINCIPAL_REGION"),
-        os.environ.get("OCI_RESOURCE_PRINCIPAL_USER"),
-        os.environ.get("OCI_RESOURCE_PRINCIPAL_FINGERPRINT"),
-        os.environ.get("OCI_RESOURCE_PRINCIPAL_TENANCY"),
-        os.environ.get("OCI_RESOURCE_PRINCIPAL_KEY_FILE"),
-        signer=models.ResourcePrincipalSigner()
-    )
+        # Set up the OCI object storage client
+        config = oci.config.from_file()  # Assumes default configuration file and profile
+        object_storage_client = oci.object_storage.ObjectStorageClient(config)
 
-    # Extracting information from the URI
-    match = re.match(r"oci://([\w.-]+?)/([\w.-]+)/(.+)", uri)
-    if not match:
-        raise ValueError(f"Invalid Oracle Cloud Storage URI: {uri}")
+        # Get the object
+        get_obj_response = object_storage_client.get_object(namespace, bucket_name, object_name)
+        if get_obj_response.status != 200:
+            raise Exception(f"Failed to download object {object_name} from bucket {bucket_name}")
 
-    namespace, bucket_name, object_name = match.groups()
+        # Write the object to a file in the temporary directory
+        object_path = os.path.join(temp_dir, object_name)
+        with open(object_path, 'wb') as f:
+            for chunk in get_obj_response.data.raw.stream(1024 * 1024, decode_content=False):
+                f.write(chunk)
 
-    file_count = 0
-    dest_path = os.path.join(temp_dir, object_name)
+        logging.info(f"Successfully downloaded {object_name} to {object_path}")
 
-    try:
-        with object_storage_client.get_object(namespace, bucket_name, object_name) as response:
-            with open(dest_path, "wb+") as f:
-                f.write(response.data.content)
-        file_count += 1
-        logging.info("Downloaded: %s", dest_path)
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch model. Error: {e}")
-
-    if file_count == 0:
-        raise RuntimeError(f"No model found in {uri}")
-
-    # Unpack compressed file if needed
-    mimetype, _ = mimetypes.guess_type(dest_path)
-    if mimetype in ["application/x-tar", "application/zip"]:
-        Storage._unpack_archive_file(dest_path, mimetype, temp_dir)
+        # Check if the file is an archive and unpack it
+        mimetype, _ = mimetypes.guess_type(object_path)
+        if mimetype in ["application/x-tar", "application/zip"]:
+            Storage._unpack_archive_file(object_path, mimetype, temp_dir)
 
 
     @staticmethod
